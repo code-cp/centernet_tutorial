@@ -9,6 +9,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 
 show_visualization_flag = False 
+# show_visualization_flag = True 
 
 def plot_gaussian(h, w, gauss):
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
@@ -156,7 +157,7 @@ class ToyDataset(Dataset):
         self.max_radius = min(img_shape)//4 
         self.max_objects = max_objects 
         
-        h, w = self.img_shape//4 
+        w, h = self.img_shape//4 
         y_arr = np.arange(h) + 0.5 
         x_arr = np.arange(w) + 0.5 
         self.xy_mesh = np.stack(np.meshgrid(x_arr, y_arr))
@@ -166,30 +167,42 @@ class ToyDataset(Dataset):
     
     def __getitem__(self, idx): 
         im = np.zeros(self.img_shape, dtype=np.float32)
-        hw = (self.img_shape[0]//4, self.img_shape[1]//4)
-        heatmap = np.zeros((self.num_classes+4, *hw), dtype=np.float32)
+        wh = (self.img_shape[0]//4, self.img_shape[1]//4)
+        heatmap = np.zeros((self.num_classes+4, *wh), dtype=np.float32)
         
-        for _ in range(np.random.randint(0, self.max_objects)): 
-            x = np.random.randint(0, self.img_shape[1])
-            y = np.random.randint(0, self.img_shape[0])
+        for _ in range(np.random.randint(1, self.max_objects)): 
+            x = np.random.randint(0, self.img_shape[0])
+            y = np.random.randint(0, self.img_shape[1])
             radius = np.random.randint(10, self.max_radius)
-            im = np.maximum(im, cv2.circle(im, (y, x), radius=radius, color=1, thickness=-1))
-            
+            im = np.maximum(im, cv2.circle(im, (x, y), radius=radius, color=1, thickness=-1))
+           
+            if show_visualization_flag: 
+                img = cv2.resize(im, (512, 512))
+                plt.imshow(img)
+                plt.axis('off')  # Turn off axes
+                plt.show()
+                            
             center = np.array([x, y])/4 
             x, y = np.floor(center).astype(np.int16)
             
             # use gaussian heatmap 
-            sigma = gaussian_radius(hw)
+            sigma = gaussian_radius(wh)
             dist_squared = np.sum((self.xy_mesh - center[:, None, None]) ** 2, axis=0)
             gauss = np.exp(-1 * dist_squared / (2 * sigma**2))
             # check gaussian 
             if show_visualization_flag:
-                plot_gaussian(*hw, gauss)
+                plot_gaussian(*wh, gauss)
             heatmap[0, :, :] = np.maximum(heatmap[0, :, :], gauss)
             # or just set to 1 
             # heatmap[0, x, y] = 1 
+            if show_visualization_flag: 
+                img = cv2.resize(heatmap[0, :, :], (512, 512))
+                plt.imshow(img)
+                plt.axis('off')  # Turn off axes
+                plt.show()
 
             # size 
+            # The smallest bounding box that encloses this circle will have width and height as 2*radius
             heatmap[1:3, x, y] = np.array([2*radius, 2*radius])
             
             # offset 
