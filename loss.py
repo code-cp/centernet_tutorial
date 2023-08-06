@@ -1,15 +1,17 @@
 import torch 
 import torch.nn.functional as F 
 
-epsilon = 1e-4
-
 def regr_loss(regr, gt_regr, mask): 
     num = mask.float().sum()*2 
     
     regr = regr[mask==1]
     gt_regr = gt_regr[mask==1]
     regr_loss = F.l1_loss(regr, gt_regr, reduction="sum")
-    regr_loss /= (num+epsilon)
+    
+    if num != 0:
+        regr_loss /= num 
+    else: 
+        print("mask sum is zero")
     
     return regr_loss
 
@@ -34,7 +36,12 @@ def _neg_loss(pred, gt, alpha=2, beta=4):
     pos_loss = pos_loss.sum()
     neg_loss = neg_loss.sum()
     
-    loss += (pos_loss + neg_loss) / (num_pos+epsilon) 
+    # NOTE, must take care of num_pos == 0 case 
+    # eg when gt max is 0.995, num_pos is 0 
+    if num_pos == 0:
+        loss = loss + neg_loss
+    else:
+        loss = loss + (pos_loss + neg_loss) / num_pos
         
     return loss  
 

@@ -2,6 +2,7 @@ import torch
 import os 
 import numpy as np 
 import matplotlib.pyplot as plt
+import cv2 
 
 from dataset import ToyDataset 
 from model import Res18CenterNet
@@ -75,8 +76,8 @@ def eval_model(model, dataloader, output_folder, epoch=0, thresh=0.25):
             plt.title('Image with pred bbox')
             plt.imshow(im.astype(np.int16))
             
-            for pos_x, pos_y, score in score_pos:
-                plt.text(pos_x, pos_y, f'{score.item():.2}', fontsize=6, c='r')
+            # for pos_x, pos_y, score in score_pos:
+            #     plt.text(pos_x, pos_y, f'{score.item():.2}', fontsize=6, c='r')
 
             plt.subplot(2, 3, 2)
             plt.title('Mask')
@@ -95,7 +96,7 @@ def eval_model(model, dataloader, output_folder, epoch=0, thresh=0.25):
             plt.imshow(pred[3].cpu().squeeze())
 
             plt.subplot(2, 3, 6)
-            plt.title('Width offset Prediction')
+            plt.title('Offset Prediction')
             plt.imshow(pred[4].cpu().squeeze())
 
             plt.suptitle(f'Epoch {epoch}')
@@ -110,7 +111,7 @@ def eval_model(model, dataloader, output_folder, epoch=0, thresh=0.25):
 if __name__ == "__main__": 
     img_size = 128 
     batch_size = 8 
-    epoch_num = 20 
+    epoch_num = 10 
     
     model = Res18CenterNet()
     model = model.to(device)

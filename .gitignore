@@ -2,6 +2,7 @@
 .vscode/
 node_modules/
 out/
+outputs/ 
 dist/
 
 # Temporary files
