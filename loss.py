@@ -1,6 +1,8 @@
 import torch 
 import torch.nn.functional as F 
 
+from utils import _sigmoid
+
 def regr_loss(regr, gt_regr, mask): 
     num = mask.float().sum()*2 
     
@@ -22,15 +24,18 @@ def _neg_loss(pred, gt, alpha=2, beta=4):
         pred (batch x c x h x w)
         gt_regr (batch x c x h x w)
     '''
+    # NOTE, this should be very very small 
+    eplison = 1e-30
+    
     pos_ind = gt.eq(1).float()
     neg_ind = gt.lt(1).float()
         
     loss = 0 
     
-    pos_loss = -1 * torch.log(pred) * torch.pow(1-pred, alpha) * pos_ind 
+    pos_loss = -1 * torch.log(pred+eplison) * torch.pow(1-pred, alpha) * pos_ind 
     
     neg_weights = torch.pow(1-gt, beta)
-    neg_loss = -1 * torch.log(1-pred) * torch.pow(pred, alpha) * neg_weights * neg_ind 
+    neg_loss = -1 * torch.log(1-pred+eplison) * torch.pow(pred, alpha) * neg_weights * neg_ind 
     
     num_pos = pos_ind.float().sum()
     pos_loss = pos_loss.sum()
@@ -46,6 +51,9 @@ def _neg_loss(pred, gt, alpha=2, beta=4):
     return loss  
 
 def criterion(prediction, gt): 
+    # need to use _sigmoid
+    # ref https://github.com/xingyizhou/CenterNet/issues/234
+    # pred_mask = _sigmoid(prediction[:, 0])
     pred_mask = torch.sigmoid(prediction[:, 0])
     mask_loss = _neg_loss(pred_mask[:, None, :, :], gt[:, 0:1, :, :])
     
