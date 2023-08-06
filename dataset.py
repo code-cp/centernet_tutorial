@@ -2,16 +2,24 @@ from torch.utils.data import Dataset
 import cv2 
 import numpy as np 
 
+import matplotlib
+# matplotlib.use('TkAgg')  # 'TkAgg' is the backend for using Tkinter
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
 
-def plot_gaussian(xy, gauss):
-    fig = plt.figure()
-    ax = Axes3D(fig)
-    ax.plot_surface(xy, gauss)
+show_visualization_flag = False 
+
+def plot_gaussian(h, w, gauss):
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    X = np.arange(0, w, 1)
+    Y = np.arange(0, h, 1)
+    X, Y = np.meshgrid(X, Y)
+    surf = ax.plot_surface(Y, X, gauss, cmap=cm.coolwarm,
+                        linewidth=0, antialiased=False)
     plt.show()
 
-def gaussian_radius(det_size, min_overlap):
+def gaussian_radius(det_size, min_overlap=0.7):
     r"""Generate 2D gaussian radius.
 
     This function is modified from the `official github repo
@@ -148,9 +156,9 @@ class ToyDataset(Dataset):
         self.max_radius = min(img_shape)//4 
         self.max_objects = max_objects 
         
-        w, h = self.img_shape//4 
-        x_arr = np.arrage(w) + 0.5 
-        y_arr = np.array(h) + 0.5 
+        h, w = self.img_shape//4 
+        y_arr = np.arange(h) + 0.5 
+        x_arr = np.arange(w) + 0.5 
         self.xy_mesh = np.stack(np.meshgrid(x_arr, y_arr))
         
     def __len__(self): 
@@ -158,22 +166,25 @@ class ToyDataset(Dataset):
     
     def __getitem__(self, idx): 
         im = np.zeros(self.img_shape, dtype=np.float32)
-        hw = (self.shape[0]//4, self.img_shape[1]//4)
+        hw = (self.img_shape[0]//4, self.img_shape[1]//4)
         heatmap = np.zeros((self.num_classes+4, *hw), dtype=np.float32)
         
         for _ in range(np.random.randint(0, self.max_objects)): 
-            x = np.random.randint(0, self.img_shape[0])
-            y = np.random.randint(0, self.img_shape[1])
+            x = np.random.randint(0, self.img_shape[1])
+            y = np.random.randint(0, self.img_shape[0])
             radius = np.random.randint(10, self.max_radius)
             im = np.maximum(im, cv2.circle(im, (y, x), radius=radius, color=1, thickness=-1))
             
             center = np.array([x, y])/4 
-            x, y = np.floor(center).astype(np.int)
+            x, y = np.floor(center).astype(np.int16)
             
             # use gaussian heatmap 
-            sigma = gussian_radius(hw)
+            sigma = gaussian_radius(hw)
             dist_squared = np.sum((self.xy_mesh - center[:, None, None]) ** 2, axis=0)
             gauss = np.exp(-1 * dist_squared / (2 * sigma**2))
+            # check gaussian 
+            if show_visualization_flag:
+                plot_gaussian(*hw, gauss)
             heatmap[0, :, :] = np.maximum(heatmap[0, :, :], gauss)
             # or just set to 1 
             # heatmap[0, x, y] = 1 
