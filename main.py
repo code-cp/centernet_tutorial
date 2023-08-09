@@ -1,130 +1,55 @@
-import torch 
-import os 
-import numpy as np 
-import matplotlib.pyplot as plt
-import cv2 
+import torch
+from torch.utils.data import DataLoader
+import os
+import sys 
+from torch import optim
 
-from dataset import ToyDataset 
-from model import Res18CenterNet
-from loss import criterion
-from ctdet import ctdet_decode 
+from tiny_kitti.kitty_dataloader import TinyKitty, image_root
+from tiny_kitti.model import ResNetBackBone, Neck, CenterNet, CenterNetHead
+from tiny_kitti.loss import heatMapLoss, whAndOffsetLoss
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-def train_model(model, optimizer, dataloader, epoch): 
-    model.train()
-    running_mask_loss, running_size_loss, running_offset_loss = 0, 0, 0 
+def train(): 
+    train_dataset = TinyKitty(root=image_root)
+    train_dataloader = DataLoader(train_dataset, batch_size=2, collate_fn=train_dataset.collate_fn)
     
-    for batch_idx, (img_batch, mask_batch) in enumerate(dataloader): 
-        img_batch = img_batch.to(device)
-        mask_batch = mask_batch.to(device)
+    backbone = ResNetBackBone()
+    
+    num_deconv_filters = [256, 128, 64]
+    num_deconv_kernels = [4]*3 
+    neck = Neck(backbone.outplanes, num_deconv_filters, num_deconv_filters)
+    
+    head = CenterNetHead(in_channels=64, feat_channels=64, num_classes=3)
+    
+    model = CenterNet(backbone, neck, head)
+    
+    optimizer = optim.SGD(model.parameters(), lr=0.02, momentum=0.9)
+    
+    wh_loss_factor = 1
+    heat_map_loss_factor = 1
+    wh_offset_loss_factor = 1
+
+    for img_list, avg_factor, target_result in train_dataloader: 
+        center_heatmap_target = target_result['center_heatmap_target']
+        wh_target = target_result['wh_target']
+        offset_target = target_result['offset_target']
+        wh_offset_weight = target_result['offset_target']
         
         optimizer.zero_grad()
-        output = model(img_batch)
+        center_heatmap_pred, wh_pred, offset_pred = model(img_list)
         
-        mask_loss, size_loss, offset_loss = criterion(output, mask_batch)
-        loss = mask_loss + size_loss + offset_loss 
-        loss.backward()
-        optimizer.step()
+        heatMap_loss = heatMapLoss(
+            center_heatmap_pred, center_heatmap_target, avg_factor)
+        wh_loss = whAndOffsetLoss(
+            wh_pred, wh_target, wh_offset_weight, avg_factor)
+        wh_offset_loss = whAndOffsetLoss(
+            offset_pred, offset_target, wh_offset_weight, avg_factor)
         
-        running_mask_loss += mask_loss
-        running_size_loss += size_loss
-        running_offset_loss += offset_loss
+        total_loss = heat_map_loss_factor*heatMap_loss + \
+            wh_loss_factor*wh_loss + wh_offset_loss_factor*wh_offset_loss
         
-        if batch_idx % 5 == 0:
-            print(f'\rmask_loss: {running_mask_loss/(batch_idx+1):.3f} size_loss:  {running_size_loss/(batch_idx+1):.3f} offset_loss: {running_offset_loss/(batch_idx+1):.3f}',
-                  end='', flush=True)
-
-    print('\r', end='', flush=True)
-    print(f"Epoch: {epoch} mask_loss: {running_mask_loss/(batch_idx): .3f} "
-          f"size_loss: {running_size_loss/(batch_idx): .3f} offset_loss: {running_offset_loss/(batch_idx): .3f}")
-
-@torch.no_grad()
-def eval_model(model, dataloader, output_folder, epoch=0, thresh=0.25): 
-    for (img_batch, mask_batch) in dataloader: 
-        img_batch = img_batch.to(device)
-        mask_batch = mask_batch.to(device)
+        total_loss.backward
         
-        predictions = model(img_batch)
-        bboxes_raw, bboxes, scores, clses = ctdet_decode(
-            predictions[:, 0:1], 
-            predictions[:, 1:3, :, :], 
-            predictions[:, 3:, :, :]
-        )
-        # size is batch x K x 4 
-        bboxes = bboxes.long().cpu().numpy()
-        
-        for batch_idx, (im, mask, pred) in enumerate(zip(img_batch, mask_batch, predictions)):
-            im = im.permute(1, 2, 0).cpu().squeeze().numpy()*255
-            # change to RGB 
-            im = np.repeat(im[:, :, None], 3, 2)
-
-            score_pos = []
-            for score, bbox, bbox_raw in zip(scores[batch_idx], bboxes[batch_idx], bboxes_raw[batch_idx]):
-                if score > thresh:
-                    im = np.maximum(im, cv2.rectangle(
-                        im, (bbox[2], bbox[3]), (bbox[0], bbox[1]), (0, 255, 0), 2))
-
-                    # uncomment to visualize bbox without offset correction
-                    # im = np.maximum(im, cv2.rectangle(
-                    #     im, (bbox_raw[2], bbox_raw[3]), (bbox_raw[0], bbox_raw[1]), (255, 0, 0), 2))
-                    score_pos.append((bbox[2]+5, bbox[3]+5, score))
-                else:
-                    break
-
-            plt.subplot(2, 3, 1)
-            plt.title('Image with pred bbox')
-            plt.imshow(im.astype(np.int16))
-            
-            # for pos_x, pos_y, score in score_pos:
-            #     plt.text(pos_x, pos_y, f'{score.item():.2}', fontsize=6, c='r')
-
-            plt.subplot(2, 3, 2)
-            plt.title('Mask')
-            plt.imshow(mask[0].cpu().squeeze())
-
-            plt.subplot(2, 3, 3)
-            plt.title('Mask Prediction')
-            plt.imshow(pred[0].cpu().squeeze())
-
-            plt.subplot(2, 3, 4)
-            plt.title('Width Prediction')
-            plt.imshow(pred[1].cpu().squeeze())
-
-            plt.subplot(2, 3, 5)
-            plt.title('Height Prediction')
-            plt.imshow(pred[3].cpu().squeeze())
-
-            plt.subplot(2, 3, 6)
-            plt.title('Offset Prediction')
-            plt.imshow(pred[4].cpu().squeeze())
-
-            plt.suptitle(f'Epoch {epoch}')
-            # plt.show()
-            # print(f'{output_folder}_{epoch}.jpg')
-            plt.savefig(f'{output_folder}/epoch_{epoch}.jpg')
-            plt.close()
-            break
-        break
-        
-        
+        optimizer.step()        
+    
 if __name__ == "__main__": 
-    img_size = 128 
-    batch_size = 8 
-    epoch_num = 10 
-    
-    model = Res18CenterNet()
-    model = model.to(device)
-    optim = torch.optim.Adam(model.parameters())
-    
-    dataset = ToyDataset(img_shape=(img_size, img_size))
-    dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size, num_workers=0)
-    
-    output_folder = './outputs'
-    os.makedirs(output_folder, exist_ok=True)
-    output_model_name = "centernet.pth"
-    output_path = os.path.join(output_folder, output_model_name)
-    for epoch in range(epoch_num): 
-        train_model(model, optim, dataloader, epoch)
-        torch.save(model.state_dict(), output_path)
-        eval_model(model, dataloader, output_folder, epoch=epoch)
+    train()
