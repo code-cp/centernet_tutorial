@@ -5,6 +5,7 @@
 - https://github.com/sidml/Understanding-Centernet
 - https://github.com/akashprakas/CenterNet
 - https://github.com/shangzhouye/centernet-detection-kitti
+- https://github.com/gau-nernst/centernet-lightning/tree/main
 
 ## blogs 
 
@@ -16,3 +17,4 @@
 - https://blog.csdn.net/weixin_42392454/article/details/125420887
 - https://zhuanlan.zhihu.com/p/374891478
 - https://www.bilibili.com/video/BV1mK411u77S?p=7&vd_source=08e7803d6baa596a0719c10c06f22612
+- https://stackoverflow.com/questions/50999977/what-does-the-gather-function-do-in-pytorch-in-layman-terms
