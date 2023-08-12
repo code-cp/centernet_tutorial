@@ -16,7 +16,6 @@ class Transform(object):
     def __init__(self, box_format='coco', height=512, width=512): 
         self.tsfm = Compose([
             Resize(height=height, width=width),
-            Normalize(mean=mean, std=std),  # Normalize using mean and std
             HorizontalFlip(), 
             RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.4),
             GaussNoise(), 
@@ -29,9 +28,6 @@ class Transform(object):
         augmented = self.tsfm(image=image, bboxes=bboxes, labels=labels)
         img, boxes = augmented['image'], augmented['bboxes'] 
         return img, boxes 
-    
-    def flip(img): 
-        return img[:, :, ::-1].copy()
     
 def gaussian2D(radius, sigma=1, dtype=torch.float32, device='cuda'): 
     x = torch.arange(
@@ -218,6 +214,8 @@ class TinyKitti(Dataset):
         self.image_list = read_list(os.path.join(root, self.ann_file))
         self.mode = mode 
         self.resize_size = resize 
+        self.mean = mean 
+        self.std = std 
         self.transform = Transform(
             'pascal_voc', height=self.resize_size[0], width=self.resize_size[1],
         )  
@@ -226,11 +224,8 @@ class TinyKitti(Dataset):
         for image_id in self.image_list: 
             filename = f'{self.img_prefix}/{image_id}.jpeg'
             image_path = os.path.join(root, filename)
-            image = Image.open(image_path) 
-            image = np.array(image)
-            height, width = image.shape[:2]
             data_info = dict(
-                filename=image_path, width=width, height=height
+                filename=image_path, 
             )
             
             label_prefix = self.img_prefix.replace('image_2', 'label_2') 
@@ -259,20 +254,19 @@ class TinyKitti(Dataset):
             
     def __getitem__(self, index): 
         data_dict = self.data_infos[index]
-        img_h, img_w = data_dict["height"], data_dict["width"]
         image_path = data_dict["filename"]
         bboxes = data_dict["ann"]["bboxes"]
         labels = data_dict["ann"]["labels"]
         image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        
+          
         if self.mode == "train": 
             image, boxes = self.transform(image, bboxes, labels)
             
         self.image_shape = image.shape 
         self.featuremap_shape = [image.shape[0]//self.down_stride,
                                 image.shape[1]//self.down_stride]
-        
+       
+        # change image range to 0-1 and HWC to CHW  
         self.img = transforms.ToTensor()(image)
         self.boxes = torch.Tensor(boxes)
         self.labels = torch.LongTensor(labels)

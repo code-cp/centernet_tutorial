@@ -8,9 +8,11 @@ from kitti_dataloader import TinyKitti, image_root
 from model import ResNetBackBone, Neck, CenterNet, CenterNetHead
 from loss import heatMapLoss, whAndOffsetLoss
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 def train(): 
     train_dataset = TinyKitti(root=image_root)
-    train_dataloader = DataLoader(train_dataset, batch_size=2, collate_fn=train_dataset.collate_fn)
+    train_dataloader = DataLoader(train_dataset, batch_size=1, collate_fn=train_dataset.collate_fn)
     
     backbone = ResNetBackBone()
     
@@ -21,18 +23,21 @@ def train():
     head = CenterNetHead(in_channels=64, feat_channels=64, num_classes=3)
     
     model = CenterNet(backbone, neck, head)
-    
+    model.to(device)
     optimizer = optim.SGD(model.parameters(), lr=0.02, momentum=0.9)
+    model.train()
     
     wh_loss_factor = 1
     heat_map_loss_factor = 1
     wh_offset_loss_factor = 1
 
     for img_list, avg_factor, target_result in train_dataloader: 
-        center_heatmap_target = target_result['center_heatmap_target']
-        wh_target = target_result['wh_target']
-        offset_target = target_result['offset_target']
-        wh_offset_weight = target_result['offset_target']
+        img_list.to(device)
+        
+        center_heatmap_target = target_result['center_heatmap_target'].to(device)
+        wh_target = target_result['wh_target'].to(device)
+        offset_target = target_result['offset_target'].to(device)
+        wh_offset_weight = target_result['offset_target'].to(device)
         
         optimizer.zero_grad()
         

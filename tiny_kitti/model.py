@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import resnet50, ResNet50_Weights
+from torch import optim
 
 class ResNetBackBone(nn.Module): 
     r"""
@@ -9,10 +10,10 @@ class ResNetBackBone(nn.Module):
     """
     def __init__(self, pretrained=True): 
         super().__init__()
-        resnet = resnet18(weights = ResNet18_Weights.DEFAULT).eval()
+        resnet = resnet50(weights = ResNet50_Weights.DEFAULT).eval()
         block_list = list(resnet.children())
         self.featuremap = nn.Sequential(*block_list[:-2])
-        self.outplanes = 512 
+        self.outplanes = 2048 
         
     def forward(self, x): 
         out = self.featuremap(x)
@@ -22,57 +23,37 @@ class Neck(nn.Module):
     def __init__(self, in_channels, num_deconv_filters, num_deconv_kernels): 
         super().__init__()
         assert len(num_deconv_filters) == len(num_deconv_kernels)
+        self.num_layers = len(num_deconv_filters)
         self.in_channels = in_channels
+        self.bn_momentum = 0.1
+        self.deconv_with_bias = False
         self.deconv_layers = self._make_deconv_layer(num_deconv_filters, num_deconv_kernels)
-        
-    def ConvModule(self, in_channels, feat_channels, kernel_size, stride, padding): 
-        conv_layers = [
-            nn.Conv2d(in_channels, feat_channels, stride=stride, kernel_size=kernel_size, padding=padding, bias=False), 
-            nn.BatchNorm2d(feat_channels), 
-            nn.ReLU(inplace=True)
-        ]
-        return conv_layers 
-    
-    def DeconvModule(self, in_channels, feat_channels, kernel_size, stride, padding): 
-        deconv_layers = [
-            nn.ConvTranspose2d(
-                in_channels, feat_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=False
-            ), 
-            nn.BatchNorm2d(feat_channels), 
-            nn.ReLU(inplace=True)
-        ]
-        return deconv_layers 
-    
+            
     def _make_deconv_layer(self, num_deconv_filters, num_deconv_kernels): 
         r"""
         use deconv layers to upsample backbone's output
         """
         layers = []
-        for i in range(len(num_deconv_filters)):
-            feat_channels = num_deconv_filters[i]
-            conv_module = self.ConvModule(
-                self.in_channels, 
-                feat_channels,
-                3, 
-                stride=1, 
-                padding=1 
-            )
-            layers.extend(conv_module)
-            upsample_module = self.DeconvModule(
-                feat_channels, 
-                feat_channels, 
-                num_deconv_kernels[i], 
-                stride=2, 
-                padding=1, 
-            )
-            layers.extend(upsample_module)
-            self.in_channels = feat_channels 
-            
+        for i in range(self.num_layers):
+            kernel = num_deconv_kernels[i]
+            num_filter = num_deconv_filters[i]
+
+            layers.append(
+                nn.ConvTranspose2d(
+                    in_channels=self.in_channels,
+                    out_channels=num_filter,
+                    kernel_size=kernel,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                    bias=self.deconv_with_bias))
+            layers.append(nn.BatchNorm2d(num_filter, momentum=self.bn_momentum))
+            layers.append(nn.ReLU(inplace=True))
+            self.in_channels = num_filter
         return nn.Sequential(*layers)
     
-    def forward(self, x): 
-        out = self.deconv_layers(x)
-        return out 
+    def forward(self, x):
+        return self.deconv_layers(x)
     
 class CenterNetHead(nn.Module): 
     def __init__(
@@ -140,7 +121,7 @@ class CenterNet(nn.Module):
         return out 
     
 if __name__ == "__main__": 
-    test_input = torch.randn((2, 3, 512, 512))
+    test_input = torch.randn((1, 3, 512, 512))
     backbone = ResNetBackBone()
     backbond_out = backbone(test_input)
     print(f"backbone output {backbond_out.shape}")
@@ -150,6 +131,7 @@ if __name__ == "__main__":
     num_deconv_kernels = [4]*3 
     neck = Neck(backbone.outplanes, num_deconv_filters, num_deconv_kernels)
     neck_out = neck(backbond_out)
+    print(f"neck_out output {neck_out.shape}")
     
     # head output 
     head = CenterNetHead(in_channels=64, feat_channels=64, num_classes=3)
@@ -161,8 +143,8 @@ if __name__ == "__main__":
 
     print("==================================================")
 
-    ct = CenterNet(backbone, neck, head)
-    heatmap, wh, offset = ct(test_input)
+    model = CenterNet(backbone, neck, head)
+    heatmap, wh, offset = model(test_input)
     
     print("Heatmap shape ", heatmap.shape)
     print("wh shape", wh.shape)
