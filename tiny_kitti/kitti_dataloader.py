@@ -14,7 +14,7 @@ image_root = r"./tiny_kitti/data"
 
 class Transform(object): 
     def __init__(self, box_format='coco', height=512, width=512): 
-        self.tsfm = Compose([
+        self.tsfm_train = Compose([
             Resize(height=height, width=width),
             HorizontalFlip(), 
             RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.4),
@@ -23,9 +23,16 @@ class Transform(object):
             CLAHE(),
             RandomGamma(),
         ], bbox_params=BboxParams(format=box_format, min_visibility=0.75, label_fields=['labels'])) 
+
+        self.tsfm_test = Compose([
+            CLAHE(),
+        ], bbox_params=BboxParams(format=box_format, min_visibility=0.0, label_fields=['labels'])) 
         
-    def __call__(self, image, bboxes, labels):
-        augmented = self.tsfm(image=image, bboxes=bboxes, labels=labels)
+    def __call__(self, mode, image, bboxes, labels):
+        if mode == "train":
+            augmented = self.tsfm_train(image=image, bboxes=bboxes, labels=labels)
+        else:
+            augmented = self.tsfm_test(image=image, bboxes=bboxes, labels=labels)
         img, boxes = augmented['image'], augmented['bboxes'] 
         return img, boxes 
     
@@ -216,10 +223,9 @@ class TinyKitti(Dataset):
         self.resize_size = resize 
         self.mean = mean 
         self.std = std 
-        self.transform = Transform(
-            'pascal_voc', height=self.resize_size[0], width=self.resize_size[1],
-        )  
         self.data_infos = []
+        
+        self.transform = Transform('pascal_voc', height=self.resize_size[0], width=self.resize_size[1])
         
         for image_id in self.image_list: 
             filename = f'{self.img_prefix}/{image_id}.jpeg'
@@ -259,9 +265,8 @@ class TinyKitti(Dataset):
         labels = data_dict["ann"]["labels"]
         image = cv2.imread(image_path)
           
-        if self.mode == "train": 
-            image, boxes = self.transform(image, bboxes, labels)
-            
+        image, boxes = self.transform(self.mode, image, bboxes, labels)
+
         self.image_shape = image.shape 
         self.featuremap_shape = [image.shape[0]//self.down_stride,
                                 image.shape[1]//self.down_stride]
@@ -336,7 +341,7 @@ class TinyKitti(Dataset):
         # the average factor is used, suppose if we have 10 bboxes in one image, then we need to average the loss of those 10 by dividing by 10
         # so the loss from an image with 2 bbox and 10 bbox will be same, otherwise the latter will contribute more.
         avg_factor = max(1, center_heatmap_target.eq(1).sum())
-        avg_factor = torch.tensor(avg_factor, dtype=torch.float16)
+        avg_factor = torch.tensor(avg_factor, dtype=torch.float32)
          
         target_result = dict(
             center_heatmap_target=center_heatmap_target, 

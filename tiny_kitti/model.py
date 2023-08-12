@@ -10,7 +10,8 @@ class ResNetBackBone(nn.Module):
     """
     def __init__(self, pretrained=True): 
         super().__init__()
-        resnet = resnet18(weights = ResNet18_Weights.DEFAULT).eval()
+        # resnet = resnet18(weights = ResNet18_Weights.DEFAULT).eval()
+        resnet = resnet18(weights = ResNet18_Weights.DEFAULT)
         block_list = list(resnet.children())
         self.featuremap = nn.Sequential(*block_list[:-2])
         self.outplanes = 512 
