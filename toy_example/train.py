@@ -109,7 +109,8 @@ def eval_model(model, dataloader, output_folder, epoch=0, thresh=0.25):
         
         
 if __name__ == "__main__": 
-    img_size = 128 
+    # img_size = 128 
+    img_size = 512
     batch_size = 8 
     epoch_num = 10 
     

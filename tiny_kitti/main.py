@@ -1,12 +1,13 @@
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 import os
 import sys 
 from torch import optim
 
 from kitti_dataloader import TinyKitti, image_root
-from model import ResNetBackBone, Neck, CenterNet, CenterNetHead
 from loss import heatMapLoss, whAndOffsetLoss
+from model import ResNetBackBone, Neck, CenterNet, CenterNetHead
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -15,11 +16,7 @@ def train():
     train_dataloader = DataLoader(train_dataset, batch_size=1, collate_fn=train_dataset.collate_fn)
     
     backbone = ResNetBackBone()
-    
-    num_deconv_filters = [256, 128, 64]
-    num_deconv_kernels = [4]*3 
-    neck = Neck(backbone.outplanes, num_deconv_filters, num_deconv_filters)
-    
+    neck = Neck(backbone.outplanes)
     head = CenterNetHead(in_channels=64, feat_channels=64, num_classes=3)
     
     model = CenterNet(backbone, neck, head)

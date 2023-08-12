@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import resnet18, ResNet18_Weights
 from torch import optim
 
 class ResNetBackBone(nn.Module): 
@@ -10,33 +10,36 @@ class ResNetBackBone(nn.Module):
     """
     def __init__(self, pretrained=True): 
         super().__init__()
-        resnet = resnet50(weights = ResNet50_Weights.DEFAULT).eval()
+        resnet = resnet18(weights = ResNet18_Weights.DEFAULT).eval()
         block_list = list(resnet.children())
         self.featuremap = nn.Sequential(*block_list[:-2])
-        self.outplanes = 2048 
+        self.outplanes = 512 
         
     def forward(self, x): 
         out = self.featuremap(x)
         return out 
-    
+
 class Neck(nn.Module): 
-    def __init__(self, in_channels, num_deconv_filters, num_deconv_kernels): 
+    def __init__(self, in_channels): 
         super().__init__()
-        assert len(num_deconv_filters) == len(num_deconv_kernels)
-        self.num_layers = len(num_deconv_filters)
+        self.num_deconv_filters = [256, 128, 64]
+        self.num_deconv_kernels = [4]*3 
+        self.num_layers = len(self.num_deconv_filters)
+
         self.in_channels = in_channels
         self.bn_momentum = 0.1
         self.deconv_with_bias = False
-        self.deconv_layers = self._make_deconv_layer(num_deconv_filters, num_deconv_kernels)
+        
+        self.deconv_layers = self._make_deconv_layer()
             
-    def _make_deconv_layer(self, num_deconv_filters, num_deconv_kernels): 
+    def _make_deconv_layer(self): 
         r"""
         use deconv layers to upsample backbone's output
         """
         layers = []
         for i in range(self.num_layers):
-            kernel = num_deconv_kernels[i]
-            num_filter = num_deconv_filters[i]
+            kernel = self.num_deconv_kernels[i]
+            num_filter = self.num_deconv_filters[i]
 
             layers.append(
                 nn.ConvTranspose2d(
@@ -47,6 +50,7 @@ class Neck(nn.Module):
                     padding=1,
                     output_padding=0,
                     bias=self.deconv_with_bias))
+                        
             layers.append(nn.BatchNorm2d(num_filter, momentum=self.bn_momentum))
             layers.append(nn.ReLU(inplace=True))
             self.in_channels = num_filter
@@ -127,9 +131,7 @@ if __name__ == "__main__":
     print(f"backbone output {backbond_out.shape}")
     
     # deconv layer 
-    num_deconv_filters = [256, 128, 64]
-    num_deconv_kernels = [4]*3 
-    neck = Neck(backbone.outplanes, num_deconv_filters, num_deconv_kernels)
+    neck = Neck(backbone.outplanes)
     neck_out = neck(backbond_out)
     print(f"neck_out output {neck_out.shape}")
     

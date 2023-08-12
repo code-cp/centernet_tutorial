@@ -336,6 +336,8 @@ class TinyKitti(Dataset):
         # the average factor is used, suppose if we have 10 bboxes in one image, then we need to average the loss of those 10 by dividing by 10
         # so the loss from an image with 2 bbox and 10 bbox will be same, otherwise the latter will contribute more.
         avg_factor = max(1, center_heatmap_target.eq(1).sum())
+        avg_factor = torch.tensor(avg_factor, dtype=torch.float16)
+         
         target_result = dict(
             center_heatmap_target=center_heatmap_target, 
             wh_target=wh_target, 
